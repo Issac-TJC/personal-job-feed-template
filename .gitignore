@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.wrangler/
+.jobfeed/
+.dev.vars
+*.log
+.DS_Store
+private-plugin.zip
+backups/

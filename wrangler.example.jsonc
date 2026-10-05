@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "your-personal-job-feed",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-05",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
+  "d1_databases": [{
+    "binding": "JOB_FEED_DB",
+    "database_name": "your-personal-job-feed",
+    "database_id": "generated-by-npm-run-setup",
+    "migrations_dir": "migrations"
+  }],
+  "r2_buckets": [{
+    "binding": "JOB_FEED_RESUMES",
+    "bucket_name": "your-personal-job-feed-resumes"
+  }],
+  "vars": {
+    "ENVIRONMENT": "production",
+    "AUTH0_ISSUER": "https://your-tenant.us.auth0.com/",
+    "AUTH0_AUDIENCE": "https://your-worker.your-subdomain.workers.dev/mcp"
+  }
+}

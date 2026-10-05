@@ -1,0 +1,53 @@
+{
+  "name": "personal-job-feed-template",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "description": "Self-hosted ChatGPT MCP app for resume-aware job discovery and tracking.",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "upgrade": "node scripts/upgrade.mjs",
+    "package:plugin": "node scripts/package-plugin.mjs",
+    "build": "npm run build:widget && wrangler deploy --dry-run --config .jobfeed/wrangler.generated.jsonc --outdir dist/worker",
+    "build:widget": "vite build",
+    "check": "tsc --noEmit && npm test",
+    "dev": "npm run build:widget && wrangler dev --config .jobfeed/wrangler.generated.jsonc",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "db:migrate:local": "wrangler d1 migrations apply JOB_FEED_DB --local --config .jobfeed/wrangler.generated.jsonc",
+    "db:migrate:remote": "wrangler d1 migrations apply JOB_FEED_DB --remote --config .jobfeed/wrangler.generated.jsonc",
+    "deploy": "npm run build:widget && wrangler deploy --config .jobfeed/wrangler.generated.jsonc"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "@modelcontextprotocol/server": "2.0.0",
+    "@openai/apps-sdk-ui": "0.2.2",
+    "fflate": "0.8.3",
+    "jose": "6.1.0",
+    "mammoth": "1.13.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "unpdf": "1.8.1",
+    "zod": "4.2.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261005.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "@vitejs/plugin-react": "6.0.1",
+    "typescript": "5.9.3",
+    "tailwindcss": "4.3.3",
+    "vite": "8.3.2",
+    "vitest": "5.0.3",
+    "wrangler": "4.147.0"
+  },
+  "overrides": {
+    "lodash": "4.18.1"
+  }
+}

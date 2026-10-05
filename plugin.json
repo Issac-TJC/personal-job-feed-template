@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "personal-job-feed",
+  "version": "1.0.0",
+  "description": "Self-hosted resume-aware job discovery, swipe review, and application tracking.",
+  "license": "MIT",
+  "keywords": ["jobs", "resume", "recommendations", "scheduled-tasks", "mcp"],
+  "mcpServers": "./mcp.json",
+  "skills": "./skills/",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Personal Job Feed",
+        "shortDescription": "Resume-aware job cards on your schedule",
+        "longDescription": "Upload a resume, confirm a structured job profile, discover official openings, swipe through personalized recommendations, and track applications in a private self-hosted MCP App.",
+        "developerName": "Self-hosted template",
+        "category": "Productivity",
+        "capabilities": ["Interactive", "Read", "Write"],
+        "defaultPrompt": ["Open my Personal Job Feed setup or latest recommendation deck."],
+        "brandColor": "#F2F2F0"
+      }
+    }
+  }
+}

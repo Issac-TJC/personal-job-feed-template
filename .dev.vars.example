@@ -1,0 +1,6 @@
+ENVIRONMENT=development
+AUTH0_ISSUER=https://example.us.auth0.com/
+AUTH0_AUDIENCE=http://localhost:8787/mcp
+ALLOWED_USER_SUB=auth0|replace-me
+# Local development only. The bypass is rejected for non-localhost requests.
+DEV_BYPASS_AUTH=true

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Personal Job Feed"
+  short_description: "Resume-aware official job recommendations"
+  default_prompt: "Use $daily-job-feed to open onboarding or prepare my next configured job feed."
+policy:
+  allow_implicit_invocation: true

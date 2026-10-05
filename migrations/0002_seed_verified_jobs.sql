@@ -1,0 +1,3 @@
+-- Intentionally empty in the reusable template.
+-- Sources and candidates are discovered from each user's confirmed profile.
+-- Existing private deployments that previously applied this migration keep their data.
