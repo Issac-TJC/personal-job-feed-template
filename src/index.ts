@@ -14,7 +14,7 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (url.pathname === "/health") return Response.json({ ok: true, service: "personal-job-feed", version: "1.0.0" });
+    if (url.pathname === "/health") return Response.json({ ok: true, service: "personal-job-feed", version: "1.1.0" });
     if (url.pathname === "/.well-known/oauth-protected-resource" || url.pathname === "/.well-known/oauth-protected-resource/mcp") return protectedResourceMetadata(request, env);
     if (url.pathname !== "/mcp") return new Response("Not found", { status: 404 });
 

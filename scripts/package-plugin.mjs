@@ -15,6 +15,7 @@ async function addTree(directory, prefix) {
   }
 }
 const manifest = JSON.parse(await readFile(path.join(root, "plugin.json"), "utf8"));
+if (state.pluginName) manifest.name = state.pluginName;
 files["plugin.json"] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`);
 files["mcp.json"] = strToU8(`${JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json", mcpServers: { "job-feed": { type: "streamable-http", url: state.mcpUrl, oauth_resource: state.mcpUrl } } }, null, 2)}\n`);
 await addTree(path.join(root, "skills"), "skills");

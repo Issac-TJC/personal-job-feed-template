@@ -1,6 +1,6 @@
 {
   "name": "personal-job-feed",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Self-hosted resume-aware job discovery, swipe review, and application tracking.",
   "license": "MIT",
   "keywords": ["jobs", "resume", "recommendations", "scheduled-tasks", "mcp"],

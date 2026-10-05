@@ -48,6 +48,7 @@ npm run package:plugin  # 只重新生成私人插件 ZIP
 ```
 
 部署状态和个性化配置保存在被 Git 忽略的 `.jobfeed/`；公开仓库不包含 Worker URL、D1 ID、Auth0 tenant 或用户 subject。
+升级已有的私人插件时，安装脚本可在本地状态中保留原插件内部名称，确保“上传新版本”不会创建重复插件；该名称不会提交到模板仓库。
 
 ## 隐私与成本
 
