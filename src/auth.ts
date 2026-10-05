@@ -10,7 +10,7 @@ function normalizedIssuer(value: string): string {
 export async function authenticate(request: Request, env: Env): Promise<Principal> {
   const host = new URL(request.url).hostname;
   if (env.ENVIRONMENT === "development" && env.DEV_BYPASS_AUTH === "true" && (host === "localhost" || host === "127.0.0.1")) {
-    return { sub: env.ALLOWED_USER_SUB || "local-user", scopes: ["jobfeed:read", "jobfeed:write"], token: "local-dev" };
+    return { sub: env.ALLOWED_USER_SUB || "local-user", scopes: ["jobfeed:read", "jobfeed:write", "jobfeed:resume"], token: "local-dev" };
   }
 
   const header = request.headers.get("authorization");

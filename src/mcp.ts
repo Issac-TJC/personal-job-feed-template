@@ -48,8 +48,19 @@ function result(data: Record<string, unknown>, summary?: string) {
   return { content: [{ type: "text" as const, text: summary ?? JSON.stringify(data) }], structuredContent: data };
 }
 
-function appMeta(visibility: ("model" | "app")[] = ["model", "app"]) {
-  return { ui: { resourceUri: UI_URI, visibility } };
+type JobFeedScope = "jobfeed:read" | "jobfeed:write" | "jobfeed:resume";
+
+function toolAuth(scopes: JobFeedScope[], extraMeta: Record<string, unknown> = {}) {
+  const securitySchemes = [{ type: "oauth2" as const, scopes }];
+  return { securitySchemes, _meta: { securitySchemes, ...extraMeta } };
+}
+
+function appAuth(
+  scopes: JobFeedScope[],
+  visibility: ("model" | "app")[] = ["model", "app"],
+  extraMeta: Record<string, unknown> = {},
+) {
+  return toolAuth(scopes, { ui: { resourceUri: UI_URI, visibility }, ...extraMeta });
 }
 
 function normalizeClassification(value: z.infer<typeof classificationSchema>): ClassificationInput {
@@ -77,7 +88,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
   server.registerTool("get_authenticated_profile", {
     title: "Get connected account", description: "Return the stable authenticated identity for this private deployment.", inputSchema: z.object({}),
     outputSchema: z.object({ id: z.string(), nickname: z.string() }), annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    _meta: { "openai/profile": true },
+    ...toolAuth(["jobfeed:read"], { "openai/profile": true }),
   }, async () => {
     requireScope(principal, "jobfeed:read");
     return result({ id: principal.sub, nickname: "Private Job Feed owner" });
@@ -85,7 +96,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
 
   registerAppTool(server, "get_onboarding_state", {
     title: "Open job feed setup", description: "Open the app and return resume profile and schedule readiness.", inputSchema: z.object({}), outputSchema: looseOutput,
-    annotations: { readOnlyHint: true, destructiveHint: false }, _meta: appMeta(),
+    annotations: { readOnlyHint: true, destructiveHint: false }, ...appAuth(["jobfeed:read"]),
   }, async () => {
     requireScope(principal, "jobfeed:read");
     return result(await getOnboardingState(env.JOB_FEED_DB, principal.sub), "Job Feed setup is ready.");
@@ -95,7 +106,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
     title: "Upload resume", description: "Validate a PDF, DOCX, or TXT resume up to 10 MiB, store the original privately in R2, and stage its extracted text for profile creation.",
     inputSchema: z.object({ file: fileSchema }), outputSchema: looseOutput,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-    _meta: { ...appMeta(), "openai/fileParams": ["file"] },
+    ...appAuth(["jobfeed:resume"], ["model", "app"], { "openai/fileParams": ["file"] }),
   }, async ({ file }) => {
     requireScope(principal, "jobfeed:resume");
     return result(await stageResume(env, principal.sub, file), "Resume staged. Analyze it once, create a draft, and ask the user to confirm.");
@@ -104,6 +115,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
   server.registerTool("get_staged_resume_text", {
     title: "Read staged resume", description: "Read normalized text from a resume the user explicitly staged, only to generate a profile draft.",
     inputSchema: z.object({ resume_id: z.string().uuid() }), outputSchema: looseOutput, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    ...toolAuth(["jobfeed:resume"]),
   }, async ({ resume_id }) => {
     requireScope(principal, "jobfeed:resume");
     return result(await getStagedResumeText(env, principal.sub, resume_id));
@@ -113,6 +125,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
     title: "Save job profile draft", description: "Save a structured profile inferred from the staged resume. The draft is not active until the user confirms it in the app.",
     inputSchema: z.object({ resume_id: z.string().uuid(), summary: z.string().min(50).max(4000), profile: profileSchema, tag_weights: z.record(z.string(), z.number().min(-5).max(5)) }),
     outputSchema: looseOutput, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    ...toolAuth(["jobfeed:resume", "jobfeed:write"]),
   }, async ({ resume_id, summary, profile, tag_weights }) => {
     requireScope(principal, "jobfeed:resume");
     requireScope(principal, "jobfeed:write");
@@ -121,7 +134,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
 
   registerAppTool(server, "get_job_profile", {
     title: "Get job profile", description: "Return the active or draft structured job profile and resume metadata.", inputSchema: z.object({}), outputSchema: looseOutput,
-    annotations: { readOnlyHint: true, destructiveHint: false }, _meta: appMeta(),
+    annotations: { readOnlyHint: true, destructiveHint: false }, ...appAuth(["jobfeed:read"]),
   }, async () => {
     requireScope(principal, "jobfeed:read");
     return result(await getJobProfile(env.JOB_FEED_DB, principal.sub));
@@ -130,7 +143,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
   registerAppTool(server, "confirm_profile", {
     title: "Confirm job profile", description: "Activate the reviewed profile draft, increment its version when replacing an active profile, and delete the previous resume.",
     inputSchema: z.object({ confirmed: z.literal(true) }), outputSchema: looseOutput,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, _meta: appMeta(["app"]),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, ...appAuth(["jobfeed:resume", "jobfeed:write"], ["app"]),
   }, async () => {
     requireScope(principal, "jobfeed:resume"); requireScope(principal, "jobfeed:write");
     return result(await confirmProfile(env, principal.sub), "Profile activated.");
@@ -139,7 +152,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
   registerAppTool(server, "delete_resume_profile", {
     title: "Delete resume and profile", description: "Permanently delete all resume objects, the structured profile, and cached matches. Job decisions are preserved.",
     inputSchema: z.object({ confirmation: z.literal("DELETE") }), outputSchema: looseOutput,
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true }, _meta: appMeta(["app"]),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true }, ...appAuth(["jobfeed:resume", "jobfeed:write"], ["app"]),
   }, async () => {
     requireScope(principal, "jobfeed:resume"); requireScope(principal, "jobfeed:write");
     return result(await deleteResumeProfile(env, principal.sub), "Resume and profile deleted.");
@@ -147,7 +160,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
 
   registerAppTool(server, "download_active_resume", {
     title: "Download active resume", description: "Return the authenticated user's active resume to the app as a private downloadable file.", inputSchema: z.object({}), outputSchema: looseOutput,
-    annotations: { readOnlyHint: true, destructiveHint: false }, _meta: appMeta(["app"]),
+    annotations: { readOnlyHint: true, destructiveHint: false }, ...appAuth(["jobfeed:resume"], ["app"]),
   }, async () => {
     requireScope(principal, "jobfeed:resume");
     const file = await getActiveResumeFile(env, principal.sub);
@@ -159,13 +172,13 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
 
   registerAppTool(server, "get_schedule_settings", {
     title: "Get recommendation schedule", description: "Return desired schedule and whether ChatGPT has acknowledged the current version.", inputSchema: z.object({}), outputSchema: looseOutput,
-    annotations: { readOnlyHint: true, destructiveHint: false }, _meta: appMeta(),
+    annotations: { readOnlyHint: true, destructiveHint: false }, ...appAuth(["jobfeed:read"]),
   }, async () => { requireScope(principal, "jobfeed:read"); return result({ ...(await getScheduleSettings(env.JOB_FEED_DB, principal.sub)) }); });
 
   registerAppTool(server, "update_schedule_settings", {
     title: "Update recommendation schedule", description: "Save timezone, ISO weekdays, one to three daily slots, per-slot job counts, and paused state. This does not itself change ChatGPT Scheduled Tasks.",
     inputSchema: z.object({ timezone: z.string().min(1).max(100), weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7), slots: z.array(slotSchema).min(1).max(3), paused: z.boolean() }),
-    outputSchema: looseOutput, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, _meta: appMeta(["app"]),
+    outputSchema: looseOutput, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, ...appAuth(["jobfeed:write"], ["app"]),
   }, async ({ timezone, weekdays, slots, paused }) => {
     requireScope(principal, "jobfeed:write");
     return result(await updateScheduleSettings(env.JOB_FEED_DB, principal.sub, timezone, weekdays, slots, paused), "Schedule preference saved. Ask ChatGPT to apply the returned schedule prompt.");
@@ -174,12 +187,14 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
   server.registerTool("mark_schedule_synced", {
     title: "Mark schedule applied", description: "Mark a schedule version synchronized only after ChatGPT successfully creates, updates, or removes all matching Scheduled Tasks.",
     inputSchema: z.object({ version: z.number().int().min(1) }), outputSchema: looseOutput, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    ...toolAuth(["jobfeed:write"]),
   }, async ({ version }) => { requireScope(principal, "jobfeed:write"); return result(await markScheduleSynced(env.JOB_FEED_DB, principal.sub, version)); });
 
   server.registerTool("prepare_feed", {
     title: "Prepare job feed", description: "Scan cached ATS sources and return only new, changed, or profile-unmatched jobs for one batched model review.",
     inputSchema: feedOptionsSchema.extend({ discovered_candidates: z.array(candidateSchema).max(100).default([]), discovered_sources: z.array(sourceSchema).max(30).default([]) }),
     outputSchema: looseOutput, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    ...toolAuth(["jobfeed:write"]),
   }, async ({ run_at, local_date, slot_id, schedule_version, max_jobs, discover_sources, refresh_sponsorship, discovered_candidates, discovered_sources }) => {
     requireScope(principal, "jobfeed:write");
     const options = { runAt: run_at, localDate: local_date, slotId: slot_id, scheduleVersion: schedule_version, maxJobs: max_jobs, discoverSources: discover_sources, refreshSponsorship: refresh_sponsorship };
@@ -191,6 +206,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
     title: "Commit job feed", description: "Persist public job facts separately from this profile's match results and create an idempotent feed.",
     inputSchema: feedOptionsSchema.extend({ classifications: z.array(classificationSchema).max(100), sponsorship_updates: z.array(sponsorshipUpdateSchema).max(100).default([]) }),
     outputSchema: looseOutput, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    ...toolAuth(["jobfeed:write"]),
   }, async ({ run_at, local_date, slot_id, schedule_version, max_jobs, discover_sources, refresh_sponsorship, classifications, sponsorship_updates }) => {
     requireScope(principal, "jobfeed:write");
     const options = { runAt: run_at, localDate: local_date, slotId: slot_id, scheduleVersion: schedule_version, maxJobs: max_jobs, discoverSources: discover_sources, refreshSponsorship: refresh_sponsorship };
@@ -202,7 +218,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
 
   registerAppTool(server, "render_feed", {
     title: "Open job feed", description: "Open a non-empty feed in the interactive fullscreen app.", inputSchema: z.object({ feed_key: z.string().min(1).max(150) }), outputSchema: looseOutput,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, _meta: appMeta(),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, ...appAuth(["jobfeed:read"]),
   }, async ({ feed_key }) => {
     requireScope(principal, "jobfeed:read");
     const data = await renderFeed(env.JOB_FEED_DB, principal.sub, feed_key);
@@ -214,6 +230,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
     title: "Prepare legacy daily feed", description: "Compatibility wrapper for the original daily feed. New schedules should use prepare_feed.",
     inputSchema: z.object({ date: dateSchema, discover_sources: z.boolean().default(false), refresh_sponsorship: z.boolean().default(false), discovered_candidates: z.array(candidateSchema).max(100).default([]), discovered_sources: z.array(sourceSchema).max(30).default([]) }),
     outputSchema: looseOutput, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    ...toolAuth(["jobfeed:write"]),
   }, async ({ date, discover_sources, refresh_sponsorship, discovered_candidates, discovered_sources }) => {
     requireScope(principal, "jobfeed:write");
     return result(await prepareDailyFeed(env.JOB_FEED_DB, principal.sub, date, discover_sources, refresh_sponsorship, discovered_candidates, discovered_sources));
@@ -223,6 +240,7 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
     title: "Commit legacy daily feed", description: "Compatibility wrapper for the original daily feed. New schedules should use commit_feed.",
     inputSchema: z.object({ date: dateSchema, classifications: z.array(classificationSchema).max(100), sponsorship_updates: z.array(sponsorshipUpdateSchema).max(100).default([]) }), outputSchema: looseOutput,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    ...toolAuth(["jobfeed:write"]),
   }, async ({ date, classifications, sponsorship_updates }) => {
     requireScope(principal, "jobfeed:write");
     return result(await commitDailyFeed(env.JOB_FEED_DB, principal.sub, date, classifications.map(normalizeClassification), sponsorship_updates));
@@ -230,40 +248,40 @@ export function buildMcpServer(env: Env, principal: Principal): McpServer {
 
   registerAppTool(server, "render_daily_feed", {
     title: "Open legacy daily feed", description: "Compatibility wrapper that opens the original daily feed.", inputSchema: z.object({ date: dateSchema }), outputSchema: looseOutput,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, _meta: appMeta(),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, ...appAuth(["jobfeed:read"]),
   }, async ({ date }) => { requireScope(principal, "jobfeed:read"); return result(await renderDailyFeed(env.JOB_FEED_DB, principal.sub, date)); });
 
   registerAppTool(server, "record_job_decision", {
     title: "Save swipe decision", description: "Record interested or not-interested. Left is interested and right is not interested.",
     inputSchema: z.object({ job_id: z.string().min(1), decision: z.enum(["interested","not_interested"]), action_id: z.string().uuid() }), outputSchema: looseOutput,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, _meta: appMeta(["app"]),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, ...appAuth(["jobfeed:write"], ["app"]),
   }, async ({ job_id, decision, action_id }) => { requireScope(principal, "jobfeed:write"); return result(await recordDecision(env.JOB_FEED_DB, principal.sub, job_id, decision, action_id)); });
 
   registerAppTool(server, "undo_job_decision", {
     title: "Undo job decision", description: "Undo a decision by its idempotency key.", inputSchema: z.object({ action_id: z.string().uuid() }), outputSchema: looseOutput,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, _meta: appMeta(["app"]),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, ...appAuth(["jobfeed:write"], ["app"]),
   }, async ({ action_id }) => { requireScope(principal, "jobfeed:write"); return result(await undoDecision(env.JOB_FEED_DB, principal.sub, action_id)); });
 
   registerAppTool(server, "list_saved_jobs", {
     title: "List saved jobs", description: "List interested and applied jobs.", inputSchema: z.object({ page: z.number().int().min(1).default(1), page_size: z.number().int().min(1).max(100).default(50) }),
-    outputSchema: looseOutput, annotations: { readOnlyHint: true, destructiveHint: false }, _meta: appMeta(),
+    outputSchema: looseOutput, annotations: { readOnlyHint: true, destructiveHint: false }, ...appAuth(["jobfeed:read"]),
   }, async ({ page, page_size }) => { requireScope(principal, "jobfeed:read"); return result(await listSavedJobs(env.JOB_FEED_DB, principal.sub, page, page_size)); });
 
   registerAppTool(server, "update_job_status", {
     title: "Update job status", description: "Set a job to undecided, interested, applied, or not interested and optionally save notes.",
     inputSchema: z.object({ job_id: z.string().min(1), status: z.enum(["undecided","interested","applied","not_interested"]), notes: z.string().max(2000).optional(), action_id: z.string().uuid() }), outputSchema: looseOutput,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, _meta: appMeta(["app"]),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, ...appAuth(["jobfeed:write"], ["app"]),
   }, async ({ job_id, status, notes, action_id }) => { requireScope(principal, "jobfeed:write"); return result(await updateJobStatus(env.JOB_FEED_DB, principal.sub, job_id, status, notes, action_id)); });
 
   registerAppTool(server, "update_preferences", {
     title: "Update job preferences", description: "Set blocked companies and explicit role or skill preferences.",
     inputSchema: z.object({ blocked_companies: z.array(z.string()).max(100), explicit_preferences: z.array(z.string()).max(50) }), outputSchema: looseOutput,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, _meta: appMeta(["app"]),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }, ...appAuth(["jobfeed:write"], ["app"]),
   }, async ({ blocked_companies, explicit_preferences }) => { requireScope(principal, "jobfeed:write"); return result(await updatePreferences(env.JOB_FEED_DB, principal.sub, blocked_companies, explicit_preferences)); });
 
   registerAppTool(server, "export_saved_csv", {
     title: "Export job history CSV", description: "Export interested, applied, and rejected job state with official links.", inputSchema: z.object({}), outputSchema: looseOutput,
-    annotations: { readOnlyHint: true, destructiveHint: false }, _meta: appMeta(),
+    annotations: { readOnlyHint: true, destructiveHint: false }, ...appAuth(["jobfeed:read"]),
   }, async () => { requireScope(principal, "jobfeed:read"); return result(await exportSavedCsv(env.JOB_FEED_DB, principal.sub), "CSV export is ready."); });
 
   return server;

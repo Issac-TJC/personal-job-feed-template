@@ -85,7 +85,9 @@ async function extractResumeText(bytes: Uint8Array, kind: "pdf" | "docx" | "txt"
     const result = await mammoth.extractRawText({ arrayBuffer: copy });
     return normalizeText(result.value);
   }
-  const pdf = await getDocumentProxy(bytes);
+  // PDF.js may transfer (and therefore detach) the ArrayBuffer it receives.
+  // Keep the downloaded bytes intact for hashing and the subsequent R2 upload.
+  const pdf = await getDocumentProxy(Uint8Array.from(bytes));
   if (pdf.numPages > 50) throw new Error("resume_has_too_many_pages");
   const result = await extractText(pdf, { mergePages: true });
   return normalizeText(String(result.text));
