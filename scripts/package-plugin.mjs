@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { strToU8, zipSync } from "fflate";
 import { readJson, root, statePath } from "./lib.mjs";
@@ -14,10 +14,19 @@ async function addTree(directory, prefix) {
     if (entry.isDirectory()) await addTree(source, target); else await addFile(source, target);
   }
 }
-const manifest = JSON.parse(await readFile(path.join(root, "plugin.json"), "utf8"));
-if (state.pluginName) manifest.name = state.pluginName;
-files["plugin.json"] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`);
-files["mcp.json"] = strToU8(`${JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json", mcpServers: { "job-feed": { type: "streamable-http", url: state.mcpUrl, oauth_resource: state.mcpUrl } } }, null, 2)}\n`);
+if (state.pluginName && state.pluginAppId) {
+  const manifest = JSON.parse(await readFile(path.join(root, ".codex-plugin", "plugin.json"), "utf8"));
+  manifest.name = state.pluginName;
+  manifest.apps = "./.app.json";
+  manifest.skills = "./skills/";
+  delete manifest.mcpServers;
+  files[".codex-plugin/plugin.json"] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`);
+  files[".app.json"] = strToU8(`${JSON.stringify({ apps: { [state.pluginName]: { id: state.pluginAppId } } }, null, 2)}\n`);
+} else {
+  const manifest = JSON.parse(await readFile(path.join(root, "plugin.json"), "utf8"));
+  files["plugin.json"] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`);
+  files["mcp.json"] = strToU8(`${JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json", mcpServers: { "job-feed": { type: "streamable-http", url: state.mcpUrl, oauth_resource: state.mcpUrl } } }, null, 2)}\n`);
+}
 await addTree(path.join(root, "skills"), "skills");
 await mkdir(path.join(root, "dist"), { recursive: true });
 await writeFile(path.join(root, "dist", "personal-job-feed-plugin.zip"), zipSync(files, { level: 9 }));
